@@ -46,7 +46,7 @@ UNIVERSITY_CHOICES = (
 )
 
 UNIVERSITY_EMAIL_VALIDATORS = {
-    'unicamp': r'^(([a-zA-Z]\d{5,7}@dac.unicamp.br)|([a-zA-Z]\d{5,7}@g.unicamp.br))$'
+    'unicamp': r'^([a-zA-Z\.-_]+@([a-zA-Z\.-_])*unicamp\.br)$'
 }
 
 UNIVERSITY_ID_VALIDATORS = {
