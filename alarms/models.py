@@ -38,7 +38,7 @@ class Alarm(models.Model):
         default=5,
         validators=[validators.MaxValueValidator(20), validators.MinValueValidator(0.05)],
     )
-    price = models.PositiveSmallIntegerField("Preço da carona em reais", null=True)
+    price = models.PositiveSmallIntegerField("Preço máximo da carona em reais", null=True)
     auto_approve = models.NullBooleanField("Aprovação automática de passageiros", null=True)
     datetime_lte = models.DateTimeField("Datetime máxima de saída da carona", null=True)
     datetime_gte = models.DateTimeField("Datetime mínima de saída da carona", null=True)
@@ -60,7 +60,7 @@ class Alarm(models.Model):
         # and then filter using expensive fields
         alarms = cls.objects.exclude(
             # Alarms that already ended should not be queried
-            Q(datetime_lte__isnull=False) & Q(datetime_lte__gte=timezone.now())
+            Q(datetime_lte__isnull=False) & Q(datetime_lte__lte=timezone.now())
         ).filter(
             # If the alarm defined auto_approve, filter it
             Q(auto_approve__isnull=True) | Q(auto_approve=trip.auto_approve)
@@ -84,10 +84,10 @@ class Alarm(models.Model):
             destination_distance=Distance('destination_point', trip.destination_point)
         ).filter(
             # Filter origin
-            origin_distance__lte=F('origin_radius')
+            origin_distance__lte=F('origin_radius') * 1000
         ).filter(
             # Filter destination
-            destination_distance__lte=F('destination_radius')
+            destination_distance__lte=F('destination_radius') * 1000
         )
         alarm_webhooks.MultipleAlarmsWebhook(alarms, trip).send()
         # Clear selected alarms

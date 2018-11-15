@@ -27,8 +27,8 @@
 
                             {% include "socialaccount/snippets/login_extra.html" %}
                             {% else %}
-                            <p>If you have not created an account yet, then please
-                                <a href="{{ signup_url }}" onclick="add_search_query(event, this)">sign up</a> first.
+                            <p>Se você ainda não criou sua conta,
+                                <a href="{{ signup_url }}" onclick="add_search_query(event, this)">crie-a</a> primeiro.
                             </p>
                             {% endif %}
                         </div>
@@ -37,9 +37,23 @@
             </div>
             <div class="column eight wide left aligned">
 
-                <form class="login ui form" method="POST" action="{% url 'account_login' %}">
+                <form class="login ui form" method="POST">
                     {% csrf_token %}
-                    {{ form.as_p }}
+                    {{ form.non_field_errors }}
+
+                    {% for hidden_field in form.hidden_fields %}
+                    {{ hidden_field.errors }}
+                    {{ hidden_field }}
+                    {% endfor %}
+
+                    {% for field in form.visible_fields %}
+                    <p>
+                        {{ field.label_tag }}<br>
+                        {{ field.errors }}
+                        {{ field }}
+                        {{ field.help_text }}
+                    </p>
+                    {% endfor %}
                     {% if redirect_field_value %}
                     <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}" />
                     {% endif %}
@@ -57,17 +71,45 @@
 </div>
 
 <script type="text/javascript">
-    function add_search_query(event, element) {
-        event.preventDefault();
-        window.location = element.href + window.location.search;
-    }
-    function add_search_query_form(form) {
-        form.attr('action', form.attr('action') + window.location.search);
+function add_search_query(event, element) {
+    event.preventDefault();
+    window.location = element.href + window.location.search;
+}
+function add_search_query_form(form) {
+    form.attr('action', form.attr('action') + window.location.search);
+}
+
+        // $("form").each(function(i, form) {
+        //     add_search_query_form($(form));
+        // })
+
+
+    // Deals with a bug in which firefox injects the url query two times
+    // Force clean url search
+    window.history.replaceState('', '', window.location.search.slice(window.location.search.slice(1).indexOf('?') + 1))
+
+    function getUrlParameter(sParam) {
+        var sPageURL = window.location.search.substring(1),
+        sURLVariables = sPageURL.split('&'),
+        sParameterName,
+        i;
+
+        for (i = 0; i < sURLVariables.length; i++) {
+            sParameterName = sURLVariables[i].split('=');
+
+            if (sParameterName[0] === sParam) {
+                return sParameterName[1] === undefined ? true : decodeURIComponent(sParameterName[1]);
+            }
+        }
+    };
+
+    // Searches for the 'next' field and updates it
+    var next = $("[name='next']")[0]
+    if (next) {
+        next.value = getUrlParameter('next')
     }
 
-    $("form").each(function(i, form) {
-        add_search_query_form($(form));
-    })
+    $("#id_university").dropdown()
 
-</script>
-{% endblock %}
+    </script>
+    {% endblock %}

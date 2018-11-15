@@ -1,18 +1,20 @@
 from django.utils import timezone
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, Http404
 from rest_framework import viewsets, status, mixins
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework_filters.backends import RestFrameworkFilterBackend
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from oauth2_provider.contrib.rest_framework.permissions import TokenMatchesOASRequirements
 from project.mixins import PrefetchQuerysetModelMixin, PatchModelMixin
+from project.inspectors import DjangoFilterDescriptionInspector
+from project.filters import LocalizedOrderingFilter
 from oauth2_provider.models import get_application_model
 from oauth.exceptions import InvalidScopedUserId
 from user_data.permissions import UserIsDriver
 from alarms.tasks import dispatch_alarms
-from ..inspectors import DjangoFilterDescriptionInspector
-from ..filters import LocalizedOrderingFilter
+from ..filters import BasicTripFilterSet
 from ..serializers import DriverTripCreateUpdateSerializer, DriverTripListRetrieveSerializer, PassengerSerializer, DriverActionsSerializer
 from .....models import Trip, Passenger
 from .....exceptions import PassengerPendingError, PassengerApprovedError, PassengerDeniedError, TripFullError
@@ -20,7 +22,11 @@ from .....exceptions import PassengerPendingError, PassengerApprovedError, Passe
 
 class DriverTripViewset(
         PrefetchQuerysetModelMixin,
-        viewsets.ModelViewSet):
+        mixins.RetrieveModelMixin,
+        mixins.ListModelMixin,
+        mixins.CreateModelMixin,
+        mixins.DestroyModelMixin,
+        viewsets.GenericViewSet):
     """Endpoint dos motoristas
 
     Permite a criação de caronas, listagem de caronas que criou e edição delas
@@ -32,7 +38,9 @@ class DriverTripViewset(
     limit = 10
     filter_backends = (
         LocalizedOrderingFilter,
+        RestFrameworkFilterBackend
     )
+    filter_class = BasicTripFilterSet
     ordering_fields = [
         'price', 'datetime'
     ]
@@ -158,51 +166,6 @@ class DriverTripViewset(
 
     @swagger_auto_schema(
         responses={
-            200: DriverTripListRetrieveSerializer,
-            404: 'Carona não existe, já aconteceu, ou você não tem permissão para acessá-la',
-            400: 'Dados do pedido contém erros',
-        },
-        security=[
-            {'OAuth2': ['trips:driver:write']}
-        ]
-    )
-    def update(self, request, *args, **kwargs):
-        """Atualizar carona
-
-        Permite a alteração de dados de caronas que **ainda não aconteceram**. Caso a carona já tenha acontecido, a resposta desse endpoint será um erro *404*.
-        """
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        serializer = DriverTripListRetrieveSerializer(instance=instance, context=self.get_serializer_context())
-        if getattr(instance, '_prefetched_objects_cache', None):
-            # If 'prefetch_related' has been applied to a queryset, we need to
-            # forcibly invalidate the prefetch cache on the instance.
-            instance._prefetched_objects_cache = {}
-
-        return Response(serializer.data)
-
-    @swagger_auto_schema(
-        responses={
-            200: DriverTripListRetrieveSerializer,
-            400: 'Dados do pedido contém erros',
-            404: 'Carona não existe, já aconteceu, ou você não tem permissão para acessá-la'
-        },
-        security=[
-            {'OAuth2': ['trips:driver:write']}
-        ]
-    )
-    def partial_update(self, *args, **kwargs):
-        """Atualizar parcialmente carona
-
-        Permite a alteração de dados de caronas que **ainda não aconteceram**. Caso a carona já tenha acontecido, a resposta desse endpoint será um erro *404*.
-        """
-        return super().partial_update(*args, **kwargs)
-
-    @swagger_auto_schema(
-        responses={
             404: 'Carona não existe, já aconteceu, ou você não tem permissão para acessá-la',
         },
         security=[
@@ -228,7 +191,7 @@ class DriverPassengerActionsViewset(
     Ações que o motorista pode executar nos passageiros de suas caronas
     """
     lookup_url_kwarg = 'passenger_user_id'
-    queryset = Passenger.objects.all()
+    queryset = Trip.objects.all()
     serializer_class = PassengerSerializer
     swagger_tags = ['Motorista']
     permission_classes = [TokenMatchesOASRequirements, UserIsDriver]
@@ -239,10 +202,14 @@ class DriverPassengerActionsViewset(
     }
 
     def get_queryset(self):
-        # Só pode editar caronas que ainda não aconteceram
-        if self.request.method != 'GET' and Trip.objects.get(pk=self.kwargs['trip_id']).datetime <= timezone.now():
+        qs = super().get_queryset()
+        # Só permitir caronas em que o usuário é motorista
+        qs = qs.filter(user=self.request.user)
+        trip = qs.filter(id=self.kwargs['trip_id']).first()
+        # Só permitir editar caronas futuras
+        if not trip or self.request.method != 'GET' and trip.datetime < timezone.now():
             return Passenger.objects.none()
-        return super().get_queryset().filter(trip=self.kwargs['trip_id'])
+        return trip.passengers.all()
 
     def get_serializer_class(self):
         if self.request.method == 'PATCH':
@@ -260,17 +227,17 @@ class DriverPassengerActionsViewset(
             # Get app and passenger user from the scoped user id
             app2, passenger = get_application_model().recover_scoped_user_id(passenger_user_id, True)
         except InvalidScopedUserId:
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            raise Http404
         if app1.id != app2.id:
             # Assert that the app from the scoped user id is the one from the token
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            raise Http404
         trip = Trip.objects.filter(id=trip_id, user=self.request.user).first()
         if trip is None:
             # Assert that the trip from the path parameter exists and belongs to the token owner
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            raise Http404
         if trip.check_is_passenger(passenger, raise_on_error=False) is None:
             # Assert that the passenger belongs to the trip
-            return Response(status=status.HTTP_404_NOT_FOUND)
+            raise Http404
         user = get_object_or_404(qs, user=passenger)
         return user
 

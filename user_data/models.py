@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.core.validators import MaxValueValidator, MinValueValidator
 from phonenumber_field.modelfields import PhoneNumberField
 from project.utils import import_current_version_module
+from .validators import UniRegexValidator
 # Create your models here.
 
 
@@ -46,11 +47,17 @@ UNIVERSITY_CHOICES = (
 )
 
 UNIVERSITY_EMAIL_VALIDATORS = {
-    'unicamp': r'^([a-zA-Z\.-_]+@([a-zA-Z\.-_])*unicamp\.br)$'
+    'unicamp': UniRegexValidator(
+        r'^([a-zA-Z\.-_]+@([a-zA-Z-_]+\.)*unicamp\.br)$',
+        "Email inválido para {0}"
+    ),
 }
 
 UNIVERSITY_ID_VALIDATORS = {
-    'unicamp': r'^\d{5,7}$'
+    'unicamp': UniRegexValidator(
+        r'^\d{5,7}$',
+        "ID inválido para {0}"
+    ),
 }
 
 

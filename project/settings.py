@@ -87,6 +87,7 @@ INSTALLED_APPS = [
     'oauth2_provider',
     'rest_framework',
     'rest_framework_filters',
+    'corsheaders',
 
     'django_extensions',
 
@@ -105,6 +106,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'silk.middleware.SilkyMiddleware',
     'nplusone.ext.django.NPlusOneMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -151,6 +153,15 @@ DATABASES = {
     }
 }
 
+
+# Since the site is behind Cloudflare, manually set it to use https
+if eval(os.environ.get('USE_HTTPS', 'False')):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    os.environ['wsgi.url_scheme'] = 'https'
+    os.environ['HTTPS'] = "on"
 
 # Password validation
 # https://docs.djangoproject.com/en/2.0/ref/settings/#auth-password-validators
@@ -257,7 +268,7 @@ EMAIL_BACKEND = 'djcelery_email.backends.CeleryEmailBackend'
 
 
 # Debug Toolbar
-SHOW_TOOLBAR_CALLBACK = eval(os.environ.get('SHOW_TOOLBAR_CALLBACK', DEBUG))
+SHOW_TOOLBAR_CALLBACK = eval(os.environ.get('SHOW_TOOLBAR_CALLBACK', 'DEBUG'))
 DEBUG_TOOLBAR_CONFIG = {
     'SHOW_TOOLBAR_CALLBACK': lambda r: SHOW_TOOLBAR_CALLBACK and r.user.is_superuser  # disables it
 }
@@ -355,8 +366,9 @@ ACCOUNT_LOGOUT_ON_GET = True
 
 # Captcha Settings
 NOCAPTCHA = True
-RECAPTCHA_PUBLIC_KEY = os.environ.get('RECAPTCHA_PUBLIC_KEY')
-RECAPTCHA_PRIVATE_KEY = os.environ.get('RECAPTCHA_PRIVATE_KEY')
+if not DEBUG:
+    RECAPTCHA_PUBLIC_KEY = os.environ.get('RECAPTCHA_PUBLIC_KEY')
+    RECAPTCHA_PRIVATE_KEY = os.environ.get('RECAPTCHA_PRIVATE_KEY')
 
 # Documentation settings
 SWAGGER_SETTINGS = {
@@ -402,7 +414,7 @@ SILKY_AUTHORISATION = True
 SILKY_PERMISSIONS = lambda user: user.is_superuser
 SILKY_META = True
 SILKY_MAX_RECORDED_REQUESTS = 10**3
-SILKY_INTERCEPT_PERCENT = 30
+SILKY_INTERCEPT_PERCENT = 100 if DEBUG else 0
 
 
 # Watchman
@@ -423,7 +435,7 @@ WATCHMAN_ENABLE_PAID_CHECKS = not DEBUG
 # Scout settings
 SCOUT_MONITOR = not DEBUG
 SCOUT_KEY = os.environ.get('SCOUT_KEY')
-SCOUT_NAME = "Unicaronas"
+SCOUT_NAME = os.environ.get('SCOUT_NAME', 'Unicaronas')
 
 
 # Email variables
@@ -440,3 +452,8 @@ if _GDAL_LIBRARY_PATH:
 _GEOS_LIBRARY_PATH = os.getenv('GEOS_LIBRARY_PATH', None)
 if _GEOS_LIBRARY_PATH:
     GEOS_LIBRARY_PATH = _GEOS_LIBRARY_PATH
+
+
+# CORS Settings
+CORS_ORIGIN_ALLOW_ALL = True
+CORS_URLS_REGEX = r'^(\/api\/.*|\/o\/token\/)$'
